@@ -24,7 +24,13 @@ def evaluate_model(model, X_test, y_test, task: str) -> dict:
         }
 
     elif task == "clustering":
-        labels = model.labels_ if hasattr(model, "labels_") else model.predict(X_test)
+        if hasattr(model, "fit_predict"):
+             # Some models like DBSCAN don't have predict methods, we score them using their fit labels directly. 
+             # For evaluate on X_test, usually clustering is unsupervised without test splits, but since we have X_test:
+             labels = model.fit_predict(X_test)
+        else:
+             labels = model.predict(X_test)
+             
         score = silhouette_score(X_test, labels) if len(set(labels)) > 1 else 0.0
         n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
         inertia = float(model.inertia_) if hasattr(model, "inertia_") else None

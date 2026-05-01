@@ -1,6 +1,8 @@
 import os
 import joblib
+import pandas as pd
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
 from imblearn.pipeline import Pipeline as ImbPipeline
 from imblearn.over_sampling import SMOTE
 from preprocessing import PreprocessorWrapper, feature_filter
@@ -15,6 +17,10 @@ def prepare_data(df, task, target=None):
         y = df[target]
         mask = y.notna()
         X, y = X.loc[mask], y.loc[mask]
+        
+        # XGBoost requires numeric labels 0 to N-1 for classification
+        if task == "classification":
+            y = pd.Series(LabelEncoder().fit_transform(y), index=y.index)
     else:
         X, y = df, None
 

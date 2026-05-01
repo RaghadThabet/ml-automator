@@ -74,7 +74,8 @@ async def upload_file(file: UploadFile = File(...)):
     SESSION["df"]       = df
     SESSION["filename"] = file.filename
 
-    preview = df.head(5).where(pd.notna(df.head(5)), other=None).values.tolist()
+    # `.values` can coerce None back to NaN in float columns, so we fill NaNs with an empty string or None safely
+    preview = df.head(5).fillna("").values.tolist()
 
     return {
         "filename":     file.filename,
@@ -126,13 +127,14 @@ async def train(req: TrainRequest):
 
     # 3 — train
     try:
-        model1, model2, name1, name2 = train_models(X_tr, y_tr, task=req.task)
+        model1, model2, name1, name2, _ = train_models(X_tr, y_tr, task=req.task)
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(500, f"Training failed: {e}")
 
     # 4 — evaluate & compare
     try:
+        # All target transformation happens in the pipeline now
         m1 = evaluate_model(model1, X_te, y_te, task=req.task)
         m2 = evaluate_model(model2, X_te, y_te, task=req.task)
 

@@ -125,6 +125,17 @@ async def train(req: TrainRequest):
         traceback.print_exc()
         raise HTTPException(500, f"Preprocessing failed: {e}")
 
+    # Extract preprocessing report from the fitted pipeline
+    prep_report = {}
+    try:
+        prep_step = pipeline.named_steps.get("preprocessing")
+        if prep_step is not None and hasattr(prep_step, "get_report"):
+            from pipeline import prepare_data
+            _, dropped_cols = __import__("preprocessing").feature_filter(df, target)
+            prep_report = prep_step.get_report(dropped_cols=dropped_cols)
+    except Exception:
+        prep_report = {}
+
     # 3 — train
     try:
         model1, model2, name1, name2, _ = train_models(X_tr, y_tr, task=req.task)
@@ -183,7 +194,7 @@ async def train(req: TrainRequest):
 
     # Store in session for /api/model/download
     SESSION.update({"task": req.task, "target": target, "best_model": best_model,
-                    "pipeline": pipeline, "metrics": best_m})
+                    "pipeline": pipeline, "metrics": best_m,"prep_report": prep_report})
 
     return JSONResponse(_clean({
         "status":      "success",
@@ -192,6 +203,7 @@ async def train(req: TrainRequest):
         "other_model": {"name": other_name, "score": other_s},
         "metrics":     best_m,
         "feature_importance": fi,
+         "preprocessing_report": prep_report,
     }))
 
 
@@ -209,6 +221,14 @@ def download_model():
 
     return FileResponse(path, media_type="application/octet-stream", filename="best_model.pkl")
 
+# ── GET /api/report ───────────────────────────────────────────────────────────
+
+@app.get("/api/report")
+def get_report():
+    """Return the preprocessing report for the last trained pipeline."""
+    if "prep_report" not in SESSION or not SESSION["prep_report"]:
+        raise HTTPException(400, "No preprocessing report available. Run /api/train first.")
+    return JSONResponse(_clean(SESSION["prep_report"]))
 
 # ── GET /api/health ───────────────────────────────────────────────────────────
 

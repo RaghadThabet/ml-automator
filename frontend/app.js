@@ -25,11 +25,11 @@ function setStep(n) {
   });
 }
 
-/* ─── Slider ─── */
-document.getElementById('split-slider').addEventListener('input', function () {
-  const v = parseInt(this.value);
-  document.getElementById('split-label').textContent = v + '% / ' + (100 - v) + '%';
-});
+// /* ─── Slider ─── */
+// document.getElementById('split-slider').addEventListener('input', function () {
+//   const v = parseInt(this.value);
+//   document.getElementById('split-label').textContent = v + '% / ' + (100 - v) + '%';
+// });
 
 /* ─── Drag & Drop ─── */
 const dropZone = document.getElementById('drop-zone');
@@ -158,7 +158,7 @@ function startTraining() {
   logOut.innerHTML = '';
   bar.style.width = '0%';
 
-  const splitPct = parseInt(document.getElementById('split-slider').value);
+  // const splitPct = parseInt(document.getElementById('split-slider').value);
   const target   = document.getElementById('target-select').value;
   const algo1    = TASK_ALGOS[selectedTask].split(' + ')[0];
   const algo2    = TASK_ALGOS[selectedTask].split(' + ')[1];
@@ -170,7 +170,8 @@ function startTraining() {
     { t: '00:04', msg: 'Handling missing values…',                  cls: 'info' },
     { t: '00:05', msg: 'Encoding categorical features…',            cls: 'info' },
     { t: '00:06', msg: 'Scaling numerical features…',               cls: 'info' },
-    { t: '00:08', msg: `Splitting data ${splitPct}% / ${100-splitPct}%…`, cls: 'info' },
+    // { t: '00:08', msg: `Splitting data ${splitPct}% / ${100-splitPct}%…`, cls: 'info' },
+    { t: '00:08', msg: `Splitting data 80% / 20%…`,                 cls: 'info' },
     { t: '00:10', msg: `Training model 1: ${algo1}…`,               cls: 'info' },
     { t: '00:15', msg: `Training model 2: ${algo2}…`,               cls: 'info' },
     { t: '00:18', msg: 'Evaluating both models on test set…',       cls: 'info' },
@@ -196,7 +197,7 @@ function startTraining() {
     body: JSON.stringify({
       task:   selectedTask,
       target: target,
-      split:  splitPct / 100,
+      // split:  splitPct / 100,
     }),
   })
     .then(r => {
@@ -252,7 +253,8 @@ function showResults(data) {
   document.getElementById('task-badge').textContent = selectedTask;
   buildMetrics(data.metrics);
   buildVisual(data.metrics);
-  buildFeatureImportance(data.feature_importance);
+  // buildFeatureImportance(data.feature_importance);
+  buildReport(data.preprocessing_report);
   trainingDone = true;
 }
 
@@ -327,23 +329,85 @@ function buildVisual(metrics) {
   }
 }
 
-function buildFeatureImportance(fi) {
-  if (!fi || fi.length === 0) {
-    document.getElementById('fi-section').innerHTML =
-      '<p style="font-size:13px;color:var(--text-secondary)">Feature importance not available for this model type.</p>';
+function buildReport(report) {
+  const container = document.getElementById('report-section');
+  if (!report) {
+    container.innerHTML = '<p style="font-size:13px;color:var(--text-secondary)">No preprocessing report available.</p>';
     return;
   }
-  const maxImp = fi[0].importance;
-  document.getElementById('fi-section').innerHTML =
-    fi.map(f => `
-      <div class="fi-row">
-        <div class="fi-feature">${f.feature}</div>
-        <div class="fi-bar-bg">
-          <div class="fi-bar" style="width:${Math.round(f.importance / maxImp * 100)}%"></div>
-        </div>
-        <div class="fi-pct">${Math.round(f.importance * 100)}%</div>
-      </div>`).join('');
+
+  const s = report.summary || {};
+  const summaryCards = [
+    { label: 'Features used',    value: s.total_features_used    ?? '—' },
+    { label: 'Features dropped', value: s.total_features_dropped ?? '—' },
+    { label: 'Numeric',          value: s.numeric_features        ?? '—' },
+    { label: 'Low-card cat.',    value: s.low_cardinality_categorical  ?? '—' },
+    { label: 'High-card cat.',   value: s.high_cardinality_categorical ?? '—' },
+  ];
+
+  const summaryHtml = `
+    <div class="report-summary-grid">
+      ${summaryCards.map(c => `
+        <div class="report-stat">
+          <div class="report-stat-value">${c.value}</div>
+          <div class="report-stat-label">${c.label}</div>
+        </div>`).join('')}
+    </div>
+    <div class="report-method-grid">
+      <div class="report-method"><span class="report-method-label">Scaling</span><span class="report-method-value">${s.scaling_method || '—'}</span></div>
+      <div class="report-method"><span class="report-method-label">Missing (numeric)</span><span class="report-method-value">${s.missing_strategy_numeric || '—'}</span></div>
+      <div class="report-method"><span class="report-method-label">Missing (categorical)</span><span class="report-method-value">${s.missing_strategy_categorical || '—'}</span></div>
+      <div class="report-method"><span class="report-method-label">High-cardinality encoding</span><span class="report-method-value">${s.high_card_encoding || '—'}</span></div>
+      <div class="report-method"><span class="report-method-label">Low-cardinality encoding</span><span class="report-method-value">${s.low_card_encoding || '—'}</span></div>
+    </div>`;
+
+  // Column detail table
+  const cols = report.columns || [];
+  const dropped = report.dropped_columns || [];
+  const allRows = [
+    ...cols.map(c => ({ ...c, status: 'used' })),
+    ...dropped.map(c => ({ ...c, status: 'dropped' })),
+  ];
+
+  const tableHtml = allRows.length === 0 ? '' : `
+    <div style="margin-top:14px;font-size:12px;color:var(--text-secondary);margin-bottom:6px;font-weight:500">Column details</div>
+    <div class="preview-wrap">
+      <table>
+        <thead><tr>
+          <th>Column</th><th>Status</th><th>Type</th><th>Encoding</th><th>Imputation / Reason</th>
+        </tr></thead>
+        <tbody>
+          ${allRows.map(r => `<tr class="${r.status === 'dropped' ? 'row-dropped' : ''}">
+            <td><strong>${r.column}</strong></td>
+            <td><span class="status-badge status-${r.status}">${r.status}</span></td>
+            <td>${r.type || '—'}</td>
+            <td>${r.encoding || '—'}</td>
+            <td>${r.imputation || r.reason || '—'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+
+  container.innerHTML = summaryHtml + tableHtml;
 }
+
+// function buildFeatureImportance(fi) {
+//   if (!fi || fi.length === 0) {
+//     document.getElementById('fi-section').innerHTML =
+//       '<p style="font-size:13px;color:var(--text-secondary)">Feature importance not available for this model type.</p>';
+//     return;
+//   }
+//   const maxImp = fi[0].importance;
+//   document.getElementById('fi-section').innerHTML =
+//     fi.map(f => `
+//       <div class="fi-row">
+//         <div class="fi-feature">${f.feature}</div>
+//         <div class="fi-bar-bg">
+//           <div class="fi-bar" style="width:${Math.round(f.importance / maxImp * 100)}%"></div>
+//         </div>
+//         <div class="fi-pct">${Math.round(f.importance * 100)}%</div>
+//       </div>`).join('');
+// }
 
 /* ─── Save model ─── */
 function saveModel() {

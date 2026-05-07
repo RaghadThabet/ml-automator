@@ -120,7 +120,7 @@ async def train(req: TrainRequest):
 
     # 2 — preprocess
     try:
-        X_tr, y_tr, X_te, y_te, pipeline = run(df, target=target, task=req.task)
+        X_tr, y_tr, X_te, y_te, pipeline,label_encoder = run(df, target=target, task=req.task)
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(500, f"Preprocessing failed: {e}")
@@ -194,7 +194,7 @@ async def train(req: TrainRequest):
 
     # Store in session for /api/model/download
     SESSION.update({"task": req.task, "target": target, "best_model": best_model,
-                    "pipeline": pipeline, "metrics": best_m,"prep_report": prep_report})
+                    "pipeline": pipeline, "metrics": best_m,"prep_report": prep_report,"label_encoder": label_encoder,})
 
     return JSONResponse(_clean({
         "status":      "success",
@@ -208,19 +208,20 @@ async def train(req: TrainRequest):
 
 
 # ── POST /api/model/download ──────────────────────────────────────────────────
-
 @app.post("/api/model/download")
 def download_model():
-    """Return the serialised best_model.pkl as a file download."""
     if "best_model" not in SESSION:
         raise HTTPException(400, "No trained model yet. Run /api/train first.")
 
-    path = os.path.join(ARTIFACT_DIR, "best_model.pkl")
-    if not os.path.exists(path):
-        raise HTTPException(404, "Model file not found.")
-
-    return FileResponse(path, media_type="application/octet-stream", filename="best_model.pkl")
-
+    bundle = {
+        "model":         SESSION["best_model"],
+        "pipeline":      SESSION["pipeline"],
+        "label_encoder": SESSION.get("label_encoder"),
+        "task":          SESSION["task"],
+    }
+    path = os.path.join(ARTIFACT_DIR, "model_bundle.joblib")
+    joblib.dump(bundle, path)
+    return FileResponse(path, media_type="application/octet-stream", filename="model_bundle.joblib")
 # ── GET /api/report ───────────────────────────────────────────────────────────
 
 @app.get("/api/report")

@@ -11,6 +11,7 @@ from preprocessing import PreprocessorWrapper, feature_filter
 def prepare_data(df, task, target=None):
     df = df.drop_duplicates()
     df, _ = feature_filter(df, target)
+    label_encoder = None
 
     if target and target in df.columns:
         X = df.drop(columns=[target])
@@ -20,7 +21,9 @@ def prepare_data(df, task, target=None):
         
         # XGBoost requires numeric labels 0 to N-1 for classification
         if task == "classification":
-            y = pd.Series(LabelEncoder().fit_transform(y), index=y.index)
+            le = LabelEncoder()
+            y = pd.Series(le.fit_transform(y), index=y.index)
+            label_encoder = le
     else:
         X, y = df, None
 
@@ -42,7 +45,7 @@ def prepare_data(df, task, target=None):
             stratify=y if can_stratify else None,
         )
 
-    return X_tr, X_te, y_tr, y_te
+    return X_tr, X_te, y_tr, y_te , label_encoder
 
 
 def build_pipeline(y_train, task):
@@ -82,6 +85,16 @@ def run_preprocessing_pipeline(X_tr, y_tr, X_te, task):
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ARTIFACT_DIR = os.path.join(BASE_DIR, "artifacts")
 
+def save_label_encoder(le, name="label_encoder.pkl"):
+    os.makedirs(ARTIFACT_DIR, exist_ok=True)
+    path = os.path.join(ARTIFACT_DIR, name)
+    joblib.dump(le, path)
+    print("Saved label encoder at:", path)
+
+def load_label_encoder(name="label_encoder.pkl"):
+    path = os.path.join(ARTIFACT_DIR, name)
+    return joblib.load(path)
+
 
 def save_pipeline(pipeline, name="preprocess_pipeline.pkl"):
     os.makedirs(ARTIFACT_DIR, exist_ok=True)
@@ -97,9 +110,11 @@ def load_pipeline(name="preprocess_pipeline.pkl"):
 
 def run(df, target, task):
 
-    X_tr, X_te, y_tr, y_te = prepare_data(df, task=task, target=target)
+    X_tr, X_te, y_tr, y_te,label_encoder = prepare_data(df, task=task, target=target)
     X_tr_p, y_tr_p, X_te_p, pipeline = run_preprocessing_pipeline(
         X_tr, y_tr, X_te, task=task
     )
     save_pipeline(pipeline)
-    return X_tr_p, y_tr_p, X_te_p, y_te, pipeline
+    if label_encoder is not None:  
+        save_label_encoder(label_encoder)
+    return X_tr_p, y_tr_p, X_te_p, y_te, pipeline,label_encoder
